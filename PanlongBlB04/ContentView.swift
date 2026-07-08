@@ -8,7 +8,7 @@
 import SwiftUI
 
 struct OBD2DashboardView: View {
-    @StateObject private var bluetoothManager = OBD2ConnectionManager()
+    @State private var bluetoothManager = OBD2ConnectionManager()
     @State private var customCommand: String = ""
     
     var body: some View {
@@ -53,6 +53,36 @@ struct OBD2DashboardView: View {
                 .padding()
                 .background(Color(.systemBackground))
                 .cornerRadius(12)
+
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("MCU Run Time")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                        Text(bluetoothManager.engineRunTime)
+                            .font(.system(.title, design: .rounded))
+                            .fontWeight(.black)
+                    }
+                    Spacer()
+                    Button(action: {
+                        // Sends the requested 0x02 0x01 0x1F raw CAN request sequence
+                        bluetoothManager.sendCommand("02 01 1F")
+                    }) {
+                        Text("Query RunTime")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(bluetoothManager.connectionStatus == "Connected" ? Color.blue : Color.secondary.opacity(0.3))
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                    .disabled(bluetoothManager.connectionStatus != "Connected")
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+
                 
                 // Action Control Panel
                 HStack(spacing: 15) {
