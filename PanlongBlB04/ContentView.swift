@@ -17,7 +17,7 @@ struct OBD2DashboardView: View {
                 
                 // Status Header Card
                 VStack(spacing: 8) {
-                    Text("Connection State")
+                    Text("Hardware Node Connection")
                         .font(.caption)
                         .foregroundColor(.secondary)
                     Text(bluetoothManager.connectionStatus)
@@ -31,44 +31,22 @@ struct OBD2DashboardView: View {
                 .cornerRadius(12)
                 .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
                 
-                // Live Metric Display
+                // 1. Toyota Camry Hybrid Layout Module (RPM)
                 HStack {
                     VStack(alignment: .leading) {
-                        Text("Engine Speed")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
+                        Text("Toyota Camry Hybrid Speed")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                            .fontWeight(.bold)
                         Text(bluetoothManager.engineRPM)
                             .font(.system(.title, design: .rounded))
                             .fontWeight(.black)
                     }
                     Spacer()
                     Button(action: {
-                        bluetoothManager.sendCommand("01 0C") // Standard Request RPM PID
+                        bluetoothManager.sendCommand("01 0C") // Send OBD2 request to Toyota
                     }) {
-                        Image(systemName: "arrow.clockwise.circle.fill")
-                            .font(.title)
-                    }
-                    .disabled(bluetoothManager.connectionStatus != "Connected")
-                }
-                .padding()
-                .background(Color(.systemBackground))
-                .cornerRadius(12)
-
-                HStack {
-                    VStack(alignment: .leading) {
-                        Text("MCU Run Time")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Text(bluetoothManager.engineRunTime)
-                            .font(.system(.title, design: .rounded))
-                            .fontWeight(.black)
-                    }
-                    Spacer()
-                    Button(action: {
-                        // Sends the requested 0x02 0x01 0x1F raw CAN request sequence
-                        bluetoothManager.sendCommand("02 01 1F")
-                    }) {
-                        Text("Query RunTime")
+                        Text("Query RPM")
                             .font(.caption)
                             .fontWeight(.bold)
                             .padding(.horizontal, 12)
@@ -82,13 +60,42 @@ struct OBD2DashboardView: View {
                 .padding()
                 .background(Color(.systemBackground))
                 .cornerRadius(12)
-
                 
-                // Action Control Panel
+                // 2. Custom EV device Layout Module (MCU Run Time)
+                HStack {
+                    VStack(alignment: .leading) {
+                        Text("EV Master Control Unit (MCU)")
+                            .font(.caption)
+                            .foregroundColor(.green)
+                            .fontWeight(.bold)
+                        Text(bluetoothManager.mcuRunTime)
+                            .font(.system(.title, design: .rounded))
+                            .fontWeight(.black)
+                    }
+                    Spacer()
+                    Button(action: {
+                        bluetoothManager.sendCommand("02 01 1F") // Send raw message packet to MCU
+                    }) {
+                        Text("Query MCU")
+                            .font(.caption)
+                            .fontWeight(.bold)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(bluetoothManager.connectionStatus == "Connected" ? Color.green : Color.secondary.opacity(0.3))
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                    }
+                    .disabled(bluetoothManager.connectionStatus != "Connected")
+                }
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(12)
+                
+                // Global Action Control Panel
                 HStack(spacing: 15) {
                     if bluetoothManager.connectionStatus == "Connected" {
                         Button(action: { bluetoothManager.disconnect() }) {
-                            Text("Disconnect")
+                            Text("Disconnect Link")
                                 .fontWeight(.medium)
                                 .frame(maxWidth: .infinity)
                                 .padding()
@@ -99,11 +106,8 @@ struct OBD2DashboardView: View {
                     } else {
                         Button(action: { bluetoothManager.startScanning() }) {
                             HStack {
-                                if bluetoothManager.isScanning {
-                                    ProgressView()
-                                        .padding(.trailing, 5)
-                                }
-                                Text(bluetoothManager.isScanning ? "Scanning..." : "Connect Device")
+                                if bluetoothManager.isScanning { ProgressView().padding(.trailing, 5) }
+                                Text(bluetoothManager.isScanning ? "Locating Adapter..." : "Establish Interface Connection")
                             }
                             .fontWeight(.medium)
                             .frame(maxWidth: .infinity)
@@ -116,14 +120,14 @@ struct OBD2DashboardView: View {
                     }
                 }
                 
-                // Send Manual Hex Command
+                // Manual Console Hex Overrides
                 HStack {
-                    TextField("Enter custom command (e.g. 01 00)", text: $customCommand)
+                    TextField("Manual Direct HEX string injection", text: $customCommand)
                         .textFieldStyle(RoundedBorderTextFieldStyle())
                         .autocapitalization(.allCharacters)
                         .disableAutocorrection(true)
                     
-                    Button("Send") {
+                    Button("Inject") {
                         bluetoothManager.sendCommand(customCommand)
                         customCommand = ""
                     }
@@ -131,33 +135,30 @@ struct OBD2DashboardView: View {
                     .disabled(bluetoothManager.connectionStatus != "Connected" || customCommand.isEmpty)
                 }
                 
-                // Console Serial Stream Monitor
+                // Active Diagnostic Trace Monitor
                 VStack(alignment: .leading) {
-                    Text("Console Output")
+                    Text("Bus Active Line Traces")
                         .font(.caption)
                         .foregroundColor(.secondary)
-                        .padding(.horizontal, 4)
                     
                     ScrollViewReader { proxy in
                         ScrollView {
                             VStack(alignment: .leading, spacing: 4) {
-                               ForEach(0..<bluetoothManager.receivedLogs.count, id: \.self) { index in
-                                   Text(bluetoothManager.receivedLogs[index])
-                                       .font(.system(.caption, design: .monospaced))
-                                       .foregroundColor(.green)
-                                       .frame(maxWidth: .infinity, alignment: .leading)
-                                       .id(index)
-                               }
+                                ForEach(0..<bluetoothManager.receivedLogs.count, id: \.self) { index in
+                                    Text(bluetoothManager.receivedLogs[index])
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundColor(.green)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .id(index)
+                                }
                             }
                             .padding(10)
                         }
                         .background(Color.black)
                         .cornerRadius(8)
-                        .onChange(of: bluetoothManager.receivedLogs.count) { oldValue, newValue in
+                        .onChange(of: bluetoothManager.receivedLogs.count) { _, newValue in
                             if newValue > 0 {
-                                withAnimation {
-                                    proxy.scrollTo(newValue - 1)
-                                }
+                                withAnimation { proxy.scrollTo(newValue - 1) }
                             }
                         }
                     }
@@ -165,11 +166,10 @@ struct OBD2DashboardView: View {
             }
             .padding()
             .background(Color(.systemGroupedBackground))
-            .navigationTitle("Panlong Diagnostic")
+            .navigationTitle("EV & Vehicle Interlock")
         }
     }
     
-    // Status visual color selector helper
     private var statusColor: Color {
         switch bluetoothManager.connectionStatus {
         case "Connected": return .green
@@ -179,6 +179,7 @@ struct OBD2DashboardView: View {
         }
     }
 }
+
 
 // SwiftUI Preview Engine Layout Canvas
 struct OBD2DashboardView_Previews: PreviewProvider {
