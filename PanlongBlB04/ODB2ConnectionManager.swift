@@ -11,6 +11,8 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     var receivedLogs: [String] = []
     var engineRPM: String = "-- RPM"
     var engineRunTime: String = "-- seconds"
+
+    private var incomingBuffer: String = ""
     
     private var centralManager: CBCentralManager!
     private var obdPeripheral: CBPeripheral?
@@ -41,14 +43,20 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
     
     func sendCommand(_ command: String) {
-        guard let peripheral = obdPeripheral, let characteristic = txCharacteristic else { return }
+        guard let peripheral = obdPeripheral, let characteristic = txCharacteristic else {
+            logMessage("Error: No Tx channel assigned yet.")
+            return
+        }
         
         let fullCommand = command + "\r"
         if let data = fullCommand.data(using: .utf8) {
-            peripheral.writeValue(data, for: characteristic, type: .withResponse)
+            let writeType: CBCharacteristicWriteType = characteristic.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+            
+            peripheral.writeValue(data, for: characteristic, type: writeType)
             logMessage("Sent: \(command)")
         }
     }
+
     
     private func logMessage(_ message: String) {
         DispatchQueue.main.async {
@@ -96,83 +104,124 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard let characteristics = service.characteristics else { return }
+        
+        logMessage("Discovered characteristics for FFF0. Inspecting properties...")
+        
         for characteristic in characteristics {
-            if characteristic.uuid == writeCharacteristicUUID { self.txCharacteristic = characteristic }
-                logMessage("Tx Channel Active: FFF1 (Write)")
-            if characteristic.uuid == notifyCharacteristicUUID {
+            let props = characteristic.properties
+            
+            // 1. Look for the channel that allows writing
+            if props.contains(.write) || props.contains(.writeWithoutResponse) {
+                self.txCharacteristic = characteristic
+                logMessage("Tx Channel Found: \(characteristic.uuid) (Write)")
+            }
+            
+            // 2. Look for the channel that allows notifications/reading
+            if props.contains(.notify) || props.contains(.read) {
                 self.rxCharacteristic = characteristic
                 peripheral.setNotifyValue(true, for: characteristic)
-                logMessage("Rx Channel Active: FFF2 (Notify)")
+                logMessage("Rx Channel Found: \(characteristic.uuid) (Notify)")
             }
         }
+        
+        // 3. Trigger the handshake once both channels are verified and swapped
         if txCharacteristic != nil && rxCharacteristic != nil {
-            logMessage("Full FFF0 duplex pipe open.")
-            initializeCANProtocol() }
+            logMessage("Duplex pipes safely inverted. Starting AT Z Handshake...")
+            initializeCANProtocol()
+        } else {
+            logMessage("Error: Could not locate a complete matching Tx/Rx pair.")
+        }
     }
     
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard characteristic.uuid == notifyCharacteristicUUID,
+        guard characteristic.uuid == rxCharacteristic?.uuid,
               let data = characteristic.value,
-              let response = String(data: data, encoding: .utf8) else { return }
+              let fragment = String(data: data, encoding: .utf8) else { return }
         
-        let cleanedResponse = response.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-        logMessage("Received: \(cleanedResponse)")
-        parseCANResponse(cleanedResponse)
+        // Append the new fragment to our ongoing buffer
+        incomingBuffer += fragment
+        
+        // The ELM327 signals the end of a complete response using the '>' character
+        if incomingBuffer.contains(">") || incomingBuffer.contains("\r") {
+            let completeResponse = incomingBuffer
+            incomingBuffer = "" // Clear the buffer for the next message
+            
+            // Log and parse the full, stitched-together response
+            let cleanedResponse = completeResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !cleanedResponse.isEmpty {
+                logMessage("Received: \(cleanedResponse)")
+                parseCANResponse(cleanedResponse)
+            }
+        }
     }
+    
+    func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        if let error = error {
+            logMessage("Write Execution Error: \(error.localizedDescription)")
+        }
+    }
+
     
     // MARK: - CAN Protocol Handshake Sequence
     private func initializeCANProtocol() {
-        let delayStep = 0.4
-        
-        // 1. Reset device
-        DispatchQueue.main.asyncAfter(deadline: .now() + delayStep * 1) { self.sendCommand("AT Z") }
-        // 2. Turn Headers ON so we can explicitly see 7E8 in the data stream
-        DispatchQueue.main.asyncAfter(deadline: .now() + delayStep * 2) { self.sendCommand("AT H1") }
-        // 3. Set protocol to ISO 15765-4 (CAN 11-bit ID, 500 kbps) - standard for most modern cars
-        DispatchQueue.main.asyncAfter(deadline: .now() + delayStep * 3) { self.sendCommand("AT SP 6") }
-        // 4. Force Transmit Header identifier to Functional ID 7DF
-        DispatchQueue.main.asyncAfter(deadline: .now() + delayStep * 4) { self.sendCommand("AT SH 7DF") }
+        // Extend spacing intervals to 0.8 seconds to accommodate cheap microcontroller lag
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { self.sendCommand("AT Z") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { self.sendCommand("AT H1") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.4) { self.sendCommand("AT SP 6") }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.2) { self.sendCommand("AT SH 7DF") }
     }
+
     
     // MARK: - CAN Response Parser
     private func parseCANResponse(_ response: String) {
-        // Strip out common text markers if present
+        // 1. Clean the incoming string
         let cleanText = response.replacingOccurrences(of: "\r", with: " ").replacingOccurrences(of: "\n", with: " ")
-        let components = cleanText.components(separatedBy: " ").filter { !$0.isEmpty }
+        var components = cleanText.components(separatedBy: " ").filter { !$0.isEmpty && $0 != ">" }
         
-        // Confirm response starts with the target ECM source identifier (7E8)
+        guard !components.isEmpty else { return }
+        
+        // 2. Handle ELM327 Version Signature directly on connection
+        if response.contains("ELM327") {
+            logMessage("Verified Authentic ELM327 Module Interlock.")
+            return
+        }
+        
+        // 3. Strip out the command echo if the ELM327 mirrored it back
+        // If the string starts with our request bytes, remove them to isolate the ECU response
+        if components.first == "02" && components.count > 3 {
+            // Looks like an echo chain "02 01 1F 7E8 ...", drop the first 3 tokens
+            if components[1] == "01" && (components[2] == "1F" || components[2] == "0C") {
+                components.removeFirst(3)
+            }
+        } else if components.first == "02011F" || components.first == "010C" {
+            // Packed echo style, drop the first token
+            components.removeFirst()
+        }
+        
+        // 4. Validate our isolated CAN address footprint
         guard let firstElement = components.first, firstElement == "7E8" else { return }
         
-        // Standard CAN frame layout after AT H1 is enabled:
-        // components[0] = 7E8 (SID)
-        // components[1] = PCI (Protocol Control Information / Data Length)
-        // components[2] = Mode/Service (e.g., 41 for Show Current Data)
-        // components[3] = PID (e.g., 0C for RPM)
-        // components[4] = Data Byte A
-        // components[5] = Data Byte B
-        
+        // 5. Execute core state machine data extraction
         if components.contains("41") {
-             if let modeIndex = components.firstIndex(of: "41"), modeIndex + 3 < components.count {
-                 let receivedPID = components[modeIndex + 1]
-                 let aString = components[modeIndex + 2]
-                 let bString = components[modeIndex + 3]
-                 
-                 guard let aVal = Int(aString, radix: 16), let bVal = Int(bString, radix: 16) else { return }
-                 
-                 switch receivedPID {
-                 case "0C": // RPM Response
-                     let rpm = ((aVal * 256) + bVal) / 4
-                     DispatchQueue.main.async { self.engineRPM = "\(rpm) RPM" }
-                     
-                 case "1F": // PID 0x1F: Time Since Engine Start Response
-                     // Formula for PID 1F: (A * 256) + B total seconds
-                     let totalSeconds = (aVal * 256) + bVal
-                     DispatchQueue.main.async { self.engineRunTime = "\(totalSeconds) sec" }
-                     
-                 default:
-                     break
-                 }
-             }
-         }
+            if let modeIndex = components.firstIndex(of: "41"), modeIndex + 3 < components.count {
+                let receivedPID = components[modeIndex + 1]
+                let aString = components[modeIndex + 2]
+                let bString = components[modeIndex + 3]
+                
+                guard let aVal = Int(aString, radix: 16), let bVal = Int(bString, radix: 16) else { return }
+                
+                switch receivedPID {
+                case "0C":
+                    let rpm = ((aVal * 256) + bVal) / 4
+                    DispatchQueue.main.async { self.engineRPM = "\(rpm) RPM" }
+                case "1F":
+                    let totalSeconds = (aVal * 256) + bVal
+                    DispatchQueue.main.async { self.engineRunTime = "\(totalSeconds) sec" }
+                default:
+                    break
+                }
+            }
+        }
     }
+
 }
