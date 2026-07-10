@@ -3,7 +3,6 @@
 //  PanlongBlB04
 //
 //  Created by Sylvia Wake-Hood on 7/7/26.
-//
 import SwiftUI
 
 struct ContentView: View {
@@ -23,24 +22,7 @@ struct OBD2DashboardView: View {
                         Text(bluetoothManager.connectionStatus).font(.body).fontWeight(.bold).foregroundColor(statusColor)
                     }.frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
                     
-                    // Core Hardware Metrics Block
-                    Group {
-                        MetricRow(title: "MCU RunTime", color: .green, val: bluetoothManager.mcuRunTime, cmd: "01 1F", btn: "Query Run Time", bm: bluetoothManager)
-                        MetricRow(title: "MCU Version", color: .blue, val: bluetoothManager.mcuVersion, cmd: "22 DD 80", btn: "Query Version", bm: bluetoothManager)
-                        MetricRow(title: "MCU Pack Voltage", color: .purple, val: bluetoothManager.mcuPackVoltage, cmd: "22 DD 83", btn: "Query Voltage", bm: bluetoothManager)
-                        MetricRow(title: "MCU Pack Current", color: .orange, val: bluetoothManager.mcuPackCurrent, cmd: "22 DD 84", btn: "Query Current", bm: bluetoothManager)
-                        MetricRow(title: "Pack State of Charge", color: .cyan, val: bluetoothManager.mcuSOC, cmd: "22 DD 85", btn: "Query SOC", bm: bluetoothManager)
-                    }
-                    
-                    // Battery Cell Metrics Block
-                    Group {
-                        MetricRow(title: "Cell Minimum", color: .indigo, val: bluetoothManager.cellMin, cmd: "22 DD 86", btn: "Query Cell Min", bm: bluetoothManager)
-                        MetricRow(title: "Cell Maximum", color: .pink, val: bluetoothManager.cellMax, cmd: "22 DD 87", btn: "Query Cell Max", bm: bluetoothManager)
-                        MetricRow(title: "Cell Mean", color: .teal, val: bluetoothManager.cellMean, cmd: "22 DD 88", btn: "Query Cell Mean", bm: bluetoothManager)
-                        MetricRow(title: "Cell Std Dev", color: .red, val: bluetoothManager.cellStdDev, cmd: "22 DD 89", btn: "Query Cell Std Dev", bm: bluetoothManager)
-                    }
-                    
-                    // Connection Interface Control Panel
+                    // FIXED: Shifted Connection Panel to the top, directly above the data sections
                     HStack(spacing: 12) {
                         if bluetoothManager.connectionStatus == "Connected" {
                             Button("Disconnect Link") { bluetoothManager.disconnect() }.font(.subheadline).fontWeight(.medium).frame(maxWidth: .infinity).padding(10).background(Color.red.opacity(0.1)).foregroundColor(.red).cornerRadius(8)
@@ -49,6 +31,23 @@ struct OBD2DashboardView: View {
                                 HStack { if bluetoothManager.isScanning { ProgressView().padding(.trailing, 2) }; Text(bluetoothManager.isScanning ? "Locating..." : "Establish Connection") }
                             }.font(.subheadline).fontWeight(.medium).frame(maxWidth: .infinity).padding(10).background(Color.blue).foregroundColor(.white).cornerRadius(8).disabled(bluetoothManager.isScanning)
                         }
+                    }
+                    
+                    // Core Hardware Metrics Block
+                    Group {
+                        MetricRow(title: "MCU RunTime", color: .green, val: bluetoothManager.mcuRunTime, cmd: "01 1F", btn: "Live", bm: bluetoothManager)
+                        MetricRow(title: "MCU Version", color: .blue, val: bluetoothManager.mcuVersion, cmd: "22 DD 80", btn: "Query", bm: bluetoothManager)
+                        MetricRow(title: "MCU Pack Voltage", color: .purple, val: bluetoothManager.mcuPackVoltage, cmd: "22 DD 83", btn: "Live", bm: bluetoothManager)
+                        MetricRow(title: "MCU Pack Current", color: .orange, val: bluetoothManager.mcuPackCurrent, cmd: "22 DD 84", btn: "Live", bm: bluetoothManager)
+                        MetricRow(title: "Pack State of Charge", color: .cyan, val: bluetoothManager.mcuSOC, cmd: "22 DD 85", btn: "Live", bm: bluetoothManager)
+                    }
+                    
+                    // Battery Cell Metrics Block
+                    Group {
+                        MetricRow(title: "Cell Minimum", color: .indigo, val: bluetoothManager.cellMin, cmd: "22 DD 86", btn: "Live", bm: bluetoothManager)
+                        MetricRow(title: "Cell Maximum", color: .pink, val: bluetoothManager.cellMax, cmd: "22 DD 87", btn: "Live", bm: bluetoothManager)
+                        MetricRow(title: "Cell Mean", color: .teal, val: bluetoothManager.cellMean, cmd: "22 DD 88", btn: "Live", bm: bluetoothManager)
+                        MetricRow(title: "Cell Std Dev", color: .red, val: bluetoothManager.cellStdDev, cmd: "22 DD 89", btn: "Live", bm: bluetoothManager)
                     }
                     
                     // Text Logging Viewer Window Terminal
@@ -85,7 +84,6 @@ struct OBD2DashboardView: View {
     }
 }
 
-// Sub-Component Row View to reduce code size and stop file trimming issues
 struct MetricRow: View {
     let title: String
     let color: Color
@@ -112,6 +110,8 @@ struct MetricRow: View {
 }
 
 #Preview { ContentView() }
+
+
 
 
 
