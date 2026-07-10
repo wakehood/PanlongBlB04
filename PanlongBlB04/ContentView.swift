@@ -6,191 +6,72 @@
 //
 import SwiftUI
 
+struct ContentView: View {
+    var body: some View { OBD2DashboardView() }
+}
+
 struct OBD2DashboardView: View {
     @State private var bluetoothManager = OBD2ConnectionManager()
-    @State private var customCommand: String = ""
-    @FocusState private var isInputActive: Bool // Focus state to track keyboard presence
     
     var body: some View {
         NavigationView {
-            // FIX 1: Wrap everything in a top-level ScrollView so fields can glide upwards
             ScrollView {
-                VStack(spacing: 20) {
+                VStack(spacing: 12) {
+                    // Status Card
+                    VStack(spacing: 4) {
+                        Text("Hardware Node Connection").font(.caption).foregroundColor(.secondary)
+                        Text(bluetoothManager.connectionStatus).font(.body).fontWeight(.bold).foregroundColor(statusColor)
+                    }.frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
                     
-                    // Hardware Connection Card
-                    VStack(spacing: 8) {
-                        Text("Hardware Node Connection")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text(bluetoothManager.connectionStatus)
-                            .font(.title2)
-                            .fontWeight(.bold)
-                            .foregroundColor(statusColor)
+                    // Core Hardware Metrics Block
+                    Group {
+                        MetricRow(title: "MCU RunTime", color: .green, val: bluetoothManager.mcuRunTime, cmd: "01 1F", btn: "Query Run Time", bm: bluetoothManager)
+                        MetricRow(title: "MCU Version", color: .blue, val: bluetoothManager.mcuVersion, cmd: "22 DD 80", btn: "Query Version", bm: bluetoothManager)
+                        MetricRow(title: "MCU Pack Voltage", color: .purple, val: bluetoothManager.mcuPackVoltage, cmd: "22 DD 83", btn: "Query Voltage", bm: bluetoothManager)
+                        MetricRow(title: "MCU Pack Current", color: .orange, val: bluetoothManager.mcuPackCurrent, cmd: "22 DD 84", btn: "Query Current", bm: bluetoothManager)
+                        MetricRow(title: "Pack State of Charge", color: .cyan, val: bluetoothManager.mcuSOC, cmd: "22 DD 85", btn: "Query SOC", bm: bluetoothManager)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                    .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
                     
-                    // 1. Toyota Camry Hybrid Module (RPM)
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("Toyota Camry Hybrid Speed")
-                                .font(.caption)
-                                .foregroundColor(.blue)
-                                .fontWeight(.bold)
-                            Text(bluetoothManager.engineRPM)
-                                .font(.system(.title, design: .rounded))
-                                .fontWeight(.black)
-                        }
-                        Spacer()
-                        Button(action: {
-                            bluetoothManager.sendCommand("01 0C") // Option A: 01 0C maps to a 02 01 0C CAN frame
-                        }) {
-                            Text("Query RPM")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(bluetoothManager.connectionStatus == "Connected" ? Color.blue : Color.secondary.opacity(0.3))
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                        }
-                        .disabled(bluetoothManager.connectionStatus != "Connected")
+                    // Battery Cell Metrics Block
+                    Group {
+                        MetricRow(title: "Cell Minimum", color: .indigo, val: bluetoothManager.cellMin, cmd: "22 DD 86", btn: "Query Cell Min", bm: bluetoothManager)
+                        MetricRow(title: "Cell Maximum", color: .pink, val: bluetoothManager.cellMax, cmd: "22 DD 87", btn: "Query Cell Max", bm: bluetoothManager)
+                        MetricRow(title: "Cell Mean", color: .teal, val: bluetoothManager.cellMean, cmd: "22 DD 88", btn: "Query Cell Mean", bm: bluetoothManager)
+                        MetricRow(title: "Cell Std Dev", color: .red, val: bluetoothManager.cellStdDev, cmd: "22 DD 89", btn: "Query Cell Std Dev", bm: bluetoothManager)
                     }
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
                     
-                    // 2. Custom EV device Layout Module (MCU Run Time)
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text("EV Master Control Unit (MCU)")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                                .fontWeight(.bold)
-                            Text(bluetoothManager.mcuRunTime)
-                                .font(.system(.title, design: .rounded))
-                                .fontWeight(.black)
-                        }
-                        Spacer()
-                        Button(action: {
-                            bluetoothManager.sendCommand("01 1F") // Option A: 01 1F maps to a 02 01 1F CAN frame
-                        }) {
-                            Text("Query MCU")
-                                .font(.caption)
-                                .fontWeight(.bold)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(bluetoothManager.connectionStatus == "Connected" ? Color.green : Color.secondary.opacity(0.3))
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                        }
-                        .disabled(bluetoothManager.connectionStatus != "Connected")
-                    }
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                    
-                    // Global Action Control Panel
-                    HStack(spacing: 15) {
+                    // Connection Interface Control Panel
+                    HStack(spacing: 12) {
                         if bluetoothManager.connectionStatus == "Connected" {
-                            Button(action: { bluetoothManager.disconnect() }) {
-                                Text("Disconnect Link")
-                                    .fontWeight(.medium)
-                                    .frame(maxWidth: .infinity)
-                                    .padding()
-                                    .background(Color.red.opacity(0.1))
-                                    .foregroundColor(.red)
-                                    .cornerRadius(10)
-                            }
+                            Button("Disconnect Link") { bluetoothManager.disconnect() }.font(.subheadline).fontWeight(.medium).frame(maxWidth: .infinity).padding(10).background(Color.red.opacity(0.1)).foregroundColor(.red).cornerRadius(8)
                         } else {
                             Button(action: { bluetoothManager.startScanning() }) {
-                                HStack {
-                                    if bluetoothManager.isScanning { ProgressView().padding(.trailing, 5) }
-                                    Text(bluetoothManager.isScanning ? "Locating Adapter..." : "Establish Interface Connection")
-                                }
-                                .fontWeight(.medium)
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(10)
-                            }
-                            .disabled(bluetoothManager.isScanning)
+                                HStack { if bluetoothManager.isScanning { ProgressView().padding(.trailing, 2) }; Text(bluetoothManager.isScanning ? "Locating..." : "Establish Connection") }
+                            }.font(.subheadline).fontWeight(.medium).frame(maxWidth: .infinity).padding(10).background(Color.blue).foregroundColor(.white).cornerRadius(8).disabled(bluetoothManager.isScanning)
                         }
                     }
                     
-                    // FIX 2: Manual Console Hex Overrides moved higher or within natural scroll bounds
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Manual Direct HEX Injection")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
-                        HStack {
-                            TextField("e.g. 01 00", text: $customCommand)
-                                .textFieldStyle(RoundedBorderTextFieldStyle())
-                                .autocapitalization(.allCharacters)
-                                .disableAutocorrection(true)
-                                .focused($isInputActive) // Track focus state here
-                            
-                            Button("Inject") {
-                                bluetoothManager.sendCommand(customCommand)
-                                customCommand = ""
-                                isInputActive = false // Dismiss keyboard upon sending
-                            }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(bluetoothManager.connectionStatus != "Connected" || customCommand.isEmpty)
-                        }
-                    }
-                    .padding()
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                    
-                    // Active Diagnostic Trace Monitor
-                    VStack(alignment: .leading) {
-                        Text("Bus Active Line Traces")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        
+                    // Text Logging Viewer Window Terminal
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Bus Active Line Traces").font(.caption2).foregroundColor(.secondary)
                         ScrollViewReader { proxy in
                             ScrollView {
-                                VStack(alignment: .leading, spacing: 4) {
+                                VStack(alignment: .leading, spacing: 2) {
                                     ForEach(0..<bluetoothManager.receivedLogs.count, id: \.self) { index in
-                                        Text(bluetoothManager.receivedLogs[index])
-                                            .font(.system(.caption, design: .monospaced))
-                                            .foregroundColor(.green)
-                                            .frame(maxWidth: .infinity, alignment: .leading)
-                                            .id(index)
+                                        Text(bluetoothManager.receivedLogs[index]).font(.system(.caption2, design: .monospaced)).foregroundColor(.green).frame(maxWidth: .infinity, alignment: .leading).id(index)
                                     }
                                 }
-                                .padding(10)
+                                .padding(6)
                             }
-                            .frame(height: 180) // Lock tracing frame size so it fits perfectly on smaller devices
-                            .background(Color.black)
-                            .cornerRadius(8)
+                            .frame(height: 100).background(Color.black).cornerRadius(6)
                             .onChange(of: bluetoothManager.receivedLogs.count) { _, newValue in
-                                if newValue > 0 {
-                                    withAnimation { proxy.scrollTo(newValue - 1) }
-                                }
+                                if newValue > 0 { withAnimation { proxy.scrollTo(newValue - 1) } }
                             }
                         }
                     }
-                }
-                .padding()
+                }.padding(.horizontal, 12).padding(.top, 10)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("EV & Vehicle Interlock")
-            // FIX 3: Keyboard access controller overlay toolbar item button
-            .toolbar {
-                ToolbarItemGroup(placement: .keyboard) {
-                    Spacer()
-                    Button("Done") {
-                        isInputActive = false
-                    }
-                }
-            }
+            .background(Color(.systemGroupedBackground)).navigationTitle("MCU Monitor")
         }
     }
     
@@ -203,4 +84,40 @@ struct OBD2DashboardView: View {
         }
     }
 }
+
+// Sub-Component Row View to reduce code size and stop file trimming issues
+struct MetricRow: View {
+    let title: String
+    let color: Color
+    let val: String
+    let cmd: String
+    let btn: String
+    let bm: OBD2ConnectionManager
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading) {
+                Text(title).font(.caption).foregroundColor(color).fontWeight(.bold)
+                Text(val).font(.system(.body, design: .rounded)).fontWeight(.black)
+            }
+            Spacer()
+            Button(btn) { bm.sendCommand(cmd) }
+                .font(.caption2).fontWeight(.bold).padding(8)
+                .background(bm.connectionStatus == "Connected" ? color : Color.secondary.opacity(0.3))
+                .foregroundColor(.white).cornerRadius(6)
+                .disabled(bm.connectionStatus != "Connected")
+        }
+        .padding(10).background(Color(.systemBackground)).cornerRadius(10)
+    }
+}
+
+#Preview { ContentView() }
+
+
+
+#Preview {
+    ContentView()
+}
+
+
 

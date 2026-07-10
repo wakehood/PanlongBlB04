@@ -12,6 +12,15 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     // Split metrics for each target hardware unit
     var engineRPM: String = "-- RPM"
     var mcuRunTime: String = "-- seconds"
+    var mcuPackVoltage: String = "-- Volts"
+    var mcuPackCurrent: String = "-- Amps"
+    var mcuVersion: String = "-- . --"
+    var mcuSOC: String = "-- %"
+    var cellMin: String = "--.---- V"
+    var cellMax: String = "--.---- V"
+    var cellMean: String = "--.---- V"
+    var cellStdDev: String = "--.---- V"
+
     
     private var centralManager: CBCentralManager!
     private var obdPeripheral: CBPeripheral?
@@ -161,28 +170,168 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             }
         }
         
-        // 3. Custom EV MCU Run Time Module ("411F")
+        // Custom EV MCU Run Time Module ("411F")
         if let range = rawString.range(of: "411F") {
             let dataStartIndex = range.upperBound
             let remainingString = rawString[dataStartIndex...]
             
-            // Ensure we have at least 4 hex characters remaining (2 bytes: AA BB)
             if remainingString.count >= 4 {
                 let aStart = remainingString.startIndex
                 let aEnd = remainingString.index(aStart, offsetBy: 2)
                 let bEnd = remainingString.index(aEnd, offsetBy: 2)
                 
-                let aString = String(remainingString[aStart..<aEnd])
-                let bString = String(remainingString[aEnd..<bEnd])
+                let aString = String(remainingString[aStart..<aEnd]) // AA (Low Byte)
+                let bString = String(remainingString[aEnd..<bEnd])   // BB (High Byte)
                 
                 if let aVal = Int(aString, radix: 16), let bVal = Int(bString, radix: 16) {
-                    let totalSeconds = (aVal * 256) + bVal
+                    // Evaluated as int16(BB:AA) -> BB is High Byte, AA is Low Byte
+                    let totalSeconds = (bVal * 256) + aVal
                     
-                    // Direct synchronous assignment to property
-                    self.mcuRunTime = "\(totalSeconds) sec"
+                    // Format total seconds into H:M:S
+                    let hours = totalSeconds / 3600
+                    let minutes = (totalSeconds % 3600) / 60
+                    let seconds = totalSeconds % 60
+                    
+                    self.mcuRunTime = String(format: "%02d:%02d:%02d", hours, minutes, seconds)
                 }
             }
         }
+
+
+        
+        // NEW: Custom EV MCU Pack Voltage Module ("62DD83")
+        if let range = rawString.range(of: "62DD83") {
+            let dataStartIndex = range.upperBound
+            let remainingString = rawString[dataStartIndex...]
+            
+            // Ensure we have at least 4 hex characters for AA and BB
+            if remainingString.count >= 4 {
+                let aStart = remainingString.startIndex
+                let aEnd = remainingString.index(aStart, offsetBy: 2)
+                let bEnd = remainingString.index(aEnd, offsetBy: 2)
+                
+                let aString = String(remainingString[aStart..<aEnd]) // AA (Low Byte)
+                let bString = String(remainingString[aEnd..<bEnd])   // BB (High Byte)
+                
+                if let aVal = Int(aString, radix: 16), let bVal = Int(bString, radix: 16) {
+                    // Per your specification: BB is High Byte, AA is Low Byte
+                    let rawValue = (bVal * 256) + aVal
+                    
+                    // Scale is 0.1 (Divide by 10.0 to get decimal voltage string format)
+                    let actualVoltage = Double(rawValue) * 0.1
+                    
+                    // Formatted string to show one decimal spot (e.g., 380.5 V)
+                    self.mcuPackVoltage = String(format: "%.1f V", actualVoltage)
+                }
+            }
+        }
+        
+        // NEW: Custom EV MCU Pack Current Module ("62DD84")
+        if let range = rawString.range(of: "62DD84") {
+            let dataStartIndex = range.upperBound
+            let remainingString = rawString[dataStartIndex...]
+            
+            // Ensure we have at least 4 hex characters for AA and BB
+            if remainingString.count >= 4 {
+                let aStart = remainingString.startIndex
+                let aEnd = remainingString.index(aStart, offsetBy: 2)
+                let bEnd = remainingString.index(aEnd, offsetBy: 2)
+                
+                let aString = String(remainingString[aStart..<aEnd]) // AA (Low Byte)
+                let bString = String(remainingString[aEnd..<bEnd])   // BB (High Byte)
+                
+                if let aVal = Int(aString, radix: 16), let bVal = Int(bString, radix: 16) {
+                    // Interpret BB as a signed 8-bit integer (Int8)
+                    // Casting to Int8 tells Swift to treat values 128-255 as negative numbers (-128 to -1)
+                    let signedBB = Int8(bitPattern: UInt8(bVal))
+                    
+                    // Reconstruct the 16-bit word: Shift the signed high byte up, then combine with the low byte
+                    let rawSignedValue = (Int(signedBB) * 256) + aVal
+                    
+                    // Scale is 0.1
+                    let actualCurrent = Double(rawSignedValue) * 0.1
+                    
+                    // Formatted string to show one decimal spot (e.g., 45.2 A or -12.5 A)
+                    self.mcuPackCurrent = String(format: "%.1f A", actualCurrent)
+                }
+            }
+        }
+        
+        // Custom EV MCU Version Module ("62DD80")
+        if let range = rawString.range(of: "62DD80") {
+            let dataStartIndex = range.upperBound
+            let remainingString = rawString[dataStartIndex...]
+            
+            if remainingString.count >= 4 {
+                let aStart = remainingString.startIndex
+                let aEnd = remainingString.index(aStart, offsetBy: 2)
+                let bEnd = remainingString.index(aEnd, offsetBy: 2)
+                
+                let aString = String(remainingString[aStart..<aEnd]) // AA (Version)
+                let bString = String(remainingString[aEnd..<bEnd])   // BB (Revision)
+                
+                if let versionVal = Int(aString, radix: 16), let revisionVal = Int(bString, radix: 16) {
+                    self.mcuVersion = "\(versionVal).\(revisionVal)"
+                }
+            }
+        }
+        
+        // Custom EV MCU State of Charge Module ("62DD85")
+        if let range = rawString.range(of: "62DD85") {
+            let dataStartIndex = range.upperBound
+            let remainingString = rawString[dataStartIndex...]
+            
+            // Ensure we have at least 2 hex characters for the single byte AA
+            if remainingString.count >= 2 {
+                let aStart = remainingString.startIndex
+                let aEnd = remainingString.index(aStart, offsetBy: 2)
+                let aString = String(remainingString[aStart..<aEnd]) // AA (SOC Percentage)
+                
+                if let socVal = Int(aString, radix: 16) {
+                    // Ensure value does not exceed the specification limit of 100
+                    let finalSOC = min(socVal, 100)
+                    self.mcuSOC = "\(finalSOC)%"
+                }
+            }
+        }
+        
+        // Custom EV MCU Cell Telemetry Matrix ("62DD86", "62DD87", "62DD88", "62DD89")
+        let cellDIDs = ["62DD86", "62DD87", "62DD88", "62DD89"]
+        for did in cellDIDs {
+            if let range = rawString.range(of: did) {
+                let dataStartIndex = range.upperBound
+                let remainingString = rawString[dataStartIndex...]
+                
+                if remainingString.count >= 4 {
+                    let aStart = remainingString.startIndex
+                    let aEnd = remainingString.index(aStart, offsetBy: 2)
+                    let bEnd = remainingString.index(aEnd, offsetBy: 2)
+                    
+                    let aString = String(remainingString[aStart..<aEnd]) // AA (Low Byte)
+                    let bString = String(remainingString[aEnd..<bEnd])   // BB (High Byte)
+                    
+                    if let aVal = Int(aString, radix: 16), let bVal = Int(bString, radix: 16) {
+                        // Reconstruct signed Int16 format (BB:AA)
+                        let signedBB = Int8(bitPattern: UInt8(bVal))
+                        let rawSignedValue = (Int(signedBB) * 256) + aVal
+                        
+                        // Equation: Int16(BB:AA) / 10000
+                        let voltageValue = Double(rawSignedValue) * 0.0001
+                        let formattedResult = String(format: "%.4f V", voltageValue)
+                        
+                        // Route to matching UI container
+                        switch did {
+                        case "62DD86": self.cellMin = formattedResult
+                        case "62DD87": self.cellMax = formattedResult
+                        case "62DD88": self.cellMean = formattedResult
+                        case "62DD89": self.cellStdDev = formattedResult
+                        default: break
+                        }
+                    }
+                }
+            }
+        }
+
     }
 
 
