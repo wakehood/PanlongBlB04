@@ -25,13 +25,13 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     
     private var incomingBuffer = ""
     private var pollingTimer: Timer?
-    private var queueIndex = 0
     private var currentInitStep = 0
+    private var masterTickCounter = 0 // Tracks 0 to 3 to slow down data streams
+    private var cellCycleCounter = 0   // Rotates through cell queries at 1x/sec
     
     private let serialServiceUUID = CBUUID(string: "FFF0")
     private let writeCharacteristicUUID = CBUUID(string: "FFF1")
     private let notifyCharacteristicUUID = CBUUID(string: "FFF2")
-    private let fastPollingQueue = ["01 1F", "22 DD 83", "22 DD 84", "22 DD 85", "22 DD 86", "22 DD 87", "22 DD 88", "22 DD 89"]
     
     override init() { super.init(); centralManager = CBCentralManager(delegate: self, queue: nil) }
     func startScanning() { guard centralManager.state == .poweredOn else { return }; isScanning = true; connectionStatus = "Scanning..."; centralManager.scanForPeripherals(withServices: [serialServiceUUID], options: nil) }
@@ -49,10 +49,10 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     
     private func advanceHandshake() {
         currentInitStep += 1
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) { // Slight bump to initial step pacing
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
             switch self.currentInitStep {
             case 1: self.sendCommand("AT Z")
-            case 2: self.sendCommand("AT E0")   // SAFETY FIX 1: Turn off Command Echoes to halve BLE traffic load
+            case 2: self.sendCommand("AT E0")
             case 3: self.sendCommand("AT H1")
             case 4: self.sendCommand("AT SP 6")
             case 5: self.sendCommand("AT SH 7DF")
@@ -64,14 +64,48 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     }
     
     func startAutomaticPolling() {
-        stopAutomaticPolling(); queueIndex = 0; logMessage("Automated Polling Engaged.")
-        // SAFETY FIX 2: Relax loop query tracking intervals from 0.1s to 0.3s to prevent buffer gridlocks
-        pollingTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: true) { [weak self] _ in
+        stopAutomaticPolling(); masterTickCounter = 0; cellCycleCounter = 0; logMessage("Relaxed Multi-Schedule Live.")
+        // Master clock ticks exactly 4 times per second (every 250 milliseconds) to prevent buffer overflows
+        pollingTimer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             guard let self = self, self.connectionStatus == "Connected" else { return }
-            self.sendCommand(self.fastPollingQueue[self.queueIndex])
-            self.queueIndex = (self.queueIndex + 1) % self.fastPollingQueue.count
+            self.executeScheduledTicks()
         }
     }
+    
+    private func executeScheduledTicks() {
+        switch masterTickCounter {
+        case 0:
+            // Halved: Voltage requested 4 times per second
+            self.sendCommand("22 DD 83")
+        case 1:
+            // Halved: Current requested 4 times per second
+            self.sendCommand("22 DD 84")
+        case 2:
+            // Run Time (2x/sec) and State of Charge (1x/sec) alternate on this slot
+            // Across a 2-second cycle: Run Time fires twice, SOC fires once, 1 slot remains open for buffer cooling
+            let innerCycle = cellCycleCounter % 4
+            if innerCycle == 0 || innerCycle == 2 {
+                self.sendCommand("01 1F")    // Run Time (Fires 2x / sec total)
+            } else if innerCycle == 1 {
+                self.sendCommand("22 DD 85") // SOC (Fires 1x / sec total)
+            }
+        case 3:
+            // Cell specific metrics (Min, Max, Mean, Std Dev) take turns one by one
+            // Each individual cell parameter is queried exactly 1 time per second
+            let cellQueue = ["22 DD 86", "22 DD 87", "22 DD 88", "22 DD 89"]
+            let currentCellCommand = cellQueue[cellCycleCounter % 4]
+            self.sendCommand(currentCellCommand)
+            
+            // Advance our secondary lower-frequency index tracker
+            cellCycleCounter = (cellCycleCounter + 1) % 100
+        default:
+            break
+        }
+        
+        // Wrap master clock from 0 to 3
+        masterTickCounter = (masterTickCounter + 1) % 4
+    }
+    
     func stopAutomaticPolling() { pollingTimer?.invalidate(); pollingTimer = nil }
     
     func centralManagerDidUpdateState(_ c: CBCentralManager) { DispatchQueue.main.async { self.connectionStatus = c.state == .poweredOn ? "Ready" : "Off" } }
@@ -97,7 +131,6 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             incomingBuffer = ""
             if !res.isEmpty {
                 logMessage("Received: \(res)")
-                // State machine checks both OK and search steps safely
                 if currentInitStep < 7 && (res.contains("OK") || res.contains("ELM327")) { advanceHandshake(); return }
                 parseCANResponse(res.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: "\r", with: "").replacingOccurrences(of: "\n", with: ""))
             }
