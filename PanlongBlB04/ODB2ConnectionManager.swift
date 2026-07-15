@@ -18,6 +18,15 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
     var cellMean = "--.---- V"
     var cellStdDev = "--.---- V"
     
+    var alertHardware = 0
+    var alertCCensus = 0
+    var alertTCensus = 0
+    var alertHVC = 0
+    var alertLVC = 0
+    var alertHiTemp = 0
+    var alertLoTemp = 0
+
+    
     private var centralManager: CBCentralManager!
     private var obdPeripheral: CBPeripheral?
     private var txCharacteristic: CBCharacteristic?
@@ -81,13 +90,14 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
             // Halved: Current requested 4 times per second
             self.sendCommand("22 DD 84")
         case 2:
-            // Run Time (2x/sec) and State of Charge (1x/sec) alternate on this slot
-            // Across a 2-second cycle: Run Time fires twice, SOC fires once, 1 slot remains open for buffer cooling
+            // Interleaved Timeline: Run Time (2x/sec), SOC (1x/sec), Alerts (1x/sec)
             let innerCycle = cellCycleCounter % 4
             if innerCycle == 0 || innerCycle == 2 {
-                self.sendCommand("01 1F")    // Run Time (Fires 2x / sec total)
+                self.sendCommand("01 1F")    // Run Time (2x/sec)
             } else if innerCycle == 1 {
-                self.sendCommand("22 DD 85") // SOC (Fires 1x / sec total)
+                self.sendCommand("22 DD 85") // SOC (1x/sec)
+            } else if innerCycle == 3 {
+                self.sendCommand("22 DD 81") // NEW: Query Fault Alerts (1x/sec)
             }
         case 3:
             // Cell specific metrics (Min, Max, Mean, Std Dev) take turns one by one
@@ -148,6 +158,22 @@ class OBD2ConnectionManager: NSObject, CBCentralManagerDelegate, CBPeripheralDel
         if let v = getVal("62DD83") { self.mcuPackVoltage = String(format: "%.1f V", Double(v) * 0.1) }
         if let v = getVal("62DD84") { self.mcuPackCurrent = String(format: "%.1f A", Double(Int(Int16(bitPattern: UInt16(v)))) * 0.1) }
         if let r = clean.range(of: "62DD85"), let soc = Int(clean[r.upperBound..<clean.index(r.upperBound, offsetBy: 2)], radix: 16) { self.mcuSOC = "\(min(soc, 100))%" }
+        // 7. Custom EV MCU Fault Alerts Module ("62DD81")
+        if let r = clean.range(of: "62DD81"), clean.count >= r.upperBound.utf16Offset(in: clean) + 2 {
+            let aString = String(clean[r.upperBound..<clean.index(r.upperBound, offsetBy: 2)]) // Byte AA
+            
+            if let byteAA = Int(aString, radix: 16) {
+                // Apply bitwise shifting masks to extract isolated binary conditions
+                self.alertHardware = (byteAA >> 6) & 1
+                self.alertCCensus  = (byteAA >> 5) & 1
+                self.alertTCensus  = (byteAA >> 4) & 1
+                self.alertHVC      = (byteAA >> 3) & 1
+                self.alertLVC      = (byteAA >> 2) & 1
+                self.alertHiTemp   = (byteAA >> 1) & 1
+                self.alertLoTemp   = (byteAA >> 0) & 1
+            }
+        }
+
         
         let cellDIDs = ["62DD86", "62DD87", "62DD88", "62DD89"]
         for did in cellDIDs {
