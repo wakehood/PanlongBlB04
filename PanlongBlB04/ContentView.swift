@@ -16,27 +16,17 @@ struct OBD2DashboardView: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 12) {
-                    // Status Header Connection Panel
+                    // Status Header Connection Display Card
                     VStack(spacing: 4) {
                         Text("Hardware Node Connection").font(.caption).foregroundColor(.secondary)
-                        Text(bluetoothManager.connectionStatus).font(.body).fontWeight(.bold).foregroundColor(statusColor)
-                    }.frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
-                    
-                    // Connection Establishment Control
-                    HStack(spacing: 12) {
-                        if bluetoothManager.connectionStatus == "Connected" {
-                            Button("Disconnect Link") { bluetoothManager.disconnect() }.font(.subheadline).fontWeight(.medium).frame(maxWidth: .infinity).padding(10).background(Color.red.opacity(0.1)).foregroundColor(.red).cornerRadius(8)
-                        } else {
-                            Button(action: { bluetoothManager.startScanning() }) {
-                                HStack { if bluetoothManager.isScanning { ProgressView().padding(.trailing, 2) }; Text(bluetoothManager.isScanning ? "Locating..." : "Establish Connection") }
-                            }.font(.subheadline).fontWeight(.medium).frame(maxWidth: .infinity).padding(10).background(Color.blue).foregroundColor(.white).cornerRadius(8).disabled(bluetoothManager.isScanning)
-                        }
+                        Text(bluetoothManager.connectionStatus) // Renders Scanning..., Connecting..., Connected
+                            .font(.body).fontWeight(.bold).foregroundColor(statusColor)
                     }
+                    .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
                     
-                    // NEW: 1. System Fault Indicator Lamps Display Panel
+                    // System Fault Indicator Warning Flags Panel Block
                     VStack(alignment: .leading, spacing: 8) {
                         Text("MCU Diagnostic Warning Status Flags").font(.caption).foregroundColor(.secondary).fontWeight(.bold)
-                        
                         HStack(spacing: 6) {
                             AlertLamp(name: "Hardware", state: bluetoothManager.alertHardware)
                             AlertLamp(name: "CCensus", state: bluetoothManager.alertCCensus)
@@ -49,7 +39,7 @@ struct OBD2DashboardView: View {
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
                     
-                    // 2. Core Telemetry Parameter Displays
+                    // Core Telemetry Parameter Rows
                     Group {
                         MetricRow(title: "MCU RunTime", color: .green, val: bluetoothManager.mcuRunTime, cmd: "01 1F", btn: "Live", bm: bluetoothManager)
                         MetricRow(title: "MCU Version", color: .blue, val: bluetoothManager.mcuVersion, cmd: "22 DD 80", btn: "Query", bm: bluetoothManager)
@@ -58,7 +48,7 @@ struct OBD2DashboardView: View {
                         MetricRow(title: "Pack State of Charge", color: .cyan, val: bluetoothManager.mcuSOC, cmd: "22 DD 85", btn: "Live", bm: bluetoothManager)
                     }
                     
-                    // 3. Battery Cell Voltage Parameter Displays
+                    // Battery Cell Parameter Rows
                     Group {
                         MetricRow(title: "Cell Minimum", color: .indigo, val: bluetoothManager.cellMin, cmd: "22 DD 86", btn: "Live", bm: bluetoothManager)
                         MetricRow(title: "Cell Maximum", color: .pink, val: bluetoothManager.cellMax, cmd: "22 DD 87", btn: "Live", bm: bluetoothManager)
@@ -66,7 +56,25 @@ struct OBD2DashboardView: View {
                         MetricRow(title: "Cell Std Dev", color: .red, val: bluetoothManager.cellStdDev, cmd: "22 DD 89", btn: "Live", bm: bluetoothManager)
                     }
                     
-                    // 4. Terminal Activity Log window
+                    // Burst Performance Test Toggle Card
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("DD84 Burst Performance Test").font(.caption).foregroundColor(.orange).fontWeight(.bold)
+                            if bluetoothManager.isBurstTesting {
+                                Text("Run #\(bluetoothManager.burstRunCount + 1) \u{2014}  Sent: \(bluetoothManager.burstSentCount)   Rcvd: \(bluetoothManager.burstReplyCount)   TO: \(bluetoothManager.burstTimeoutCount)")
+                                    .font(.system(.caption2, design: .monospaced)).foregroundColor(.orange)
+                            }
+                        }
+                        Spacer()
+                        Button("Start Test") { bluetoothManager.startBurstTest() }
+                            .font(.caption2).fontWeight(.bold).padding(8)
+                            .background(bluetoothManager.isBurstTesting || bluetoothManager.connectionStatus != "Connected" ? Color.secondary.opacity(0.3) : Color.orange)
+                            .foregroundColor(.white).cornerRadius(6)
+                            .disabled(bluetoothManager.connectionStatus != "Connected" || bluetoothManager.isBurstTesting)
+                    }
+                    .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
+
+                    // Active Console Line Trace Output Window Terminal
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Bus Active Line Traces").font(.caption2).foregroundColor(.secondary)
                         ScrollViewReader { proxy in
@@ -100,7 +108,6 @@ struct OBD2DashboardView: View {
     }
 }
 
-// Subview Component for specific Row Layouts
 struct MetricRow: View {
     let title: String; let color: Color; let val: String; let cmd: String; let btn: String; let bm: OBD2ConnectionManager
     var body: some View {
@@ -115,29 +122,13 @@ struct MetricRow: View {
     }
 }
 
-// NEW: Subview Component for individual Status Indicator Lamps
 struct AlertLamp: View {
-    let name: String
-    let state: Int
-    
+    let name: String; let state: Int
     var body: some View {
         VStack(spacing: 4) {
-            Circle()
-                // Shifts color natively: 0 = Green (Safe), 1 = Red (Active Fault Condition)
-                .fill(state == 1 ? Color.red : Color.green)
-                .frame(width: 14, height: 14)
-                // Adds a soft visual glow effect ring if a flag trips
-                .shadow(color: state == 1 ? Color.red : Color.clear, radius: 4)
-            
-            Text(name)
-                .font(.system(size: 8, weight: .medium, design: .monospaced))
-                .foregroundColor(.secondary)
-                .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 6)
-        .background(Color(.systemGroupedBackground).opacity(0.5))
-        .cornerRadius(6)
+            Circle().fill(state == 1 ? Color.red : Color.green).frame(width: 14, height: 14).shadow(color: state == 1 ? Color.red : Color.clear, radius: 4)
+            Text(name).font(.system(size: 8, weight: .medium, design: .monospaced)).foregroundColor(.secondary).lineLimit(1)
+        }.frame(maxWidth: .infinity).padding(.vertical, 6).background(Color(.systemGroupedBackground).opacity(0.5)).cornerRadius(6)
     }
 }
 
