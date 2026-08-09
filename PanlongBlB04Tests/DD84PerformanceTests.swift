@@ -1,4 +1,5 @@
 import XCTest
+import OBD2Kit
 @testable import PanlongBlB04
 
 final class DD84PerformanceTests: XCTestCase {

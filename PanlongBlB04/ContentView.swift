@@ -4,6 +4,7 @@
 //
 //  Created by Sylvia Wake-Hood on 7/7/26.
 import SwiftUI
+import OBD2Kit
 
 struct ContentView: View {
     var body: some View { OBD2DashboardView() }
@@ -11,7 +12,7 @@ struct ContentView: View {
 
 struct OBD2DashboardView: View {
     @State private var bluetoothManager = OBD2ConnectionManager()
-    
+
     var body: some View {
         NavigationView {
             ScrollView {
@@ -23,7 +24,7 @@ struct OBD2DashboardView: View {
                             .font(.body).fontWeight(.bold).foregroundColor(statusColor)
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
-                    
+
                     // System Fault Indicator Warning Flags Panel Block
                     VStack(alignment: .leading, spacing: 8) {
                         Text("MCU Diagnostic Warning Status Flags").font(.caption).foregroundColor(.secondary).fontWeight(.bold)
@@ -38,7 +39,7 @@ struct OBD2DashboardView: View {
                         }
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
-                    
+
                     // Core Telemetry Parameter Rows
                     Group {
                         MetricRow(title: "MCU RunTime", color: .green, val: bluetoothManager.mcuRunTime, cmd: "01 1F", btn: "Live", bm: bluetoothManager)
@@ -47,7 +48,7 @@ struct OBD2DashboardView: View {
                         MetricRow(title: "MCU Pack Current", color: .orange, val: bluetoothManager.mcuPackCurrent, cmd: "22 DD 84", btn: "Live", bm: bluetoothManager)
                         MetricRow(title: "Pack State of Charge", color: .cyan, val: bluetoothManager.mcuSOC, cmd: "22 DD 85", btn: "Live", bm: bluetoothManager)
                     }
-                    
+
                     // Battery Cell Parameter Rows
                     Group {
                         MetricRow(title: "Cell Minimum", color: .indigo, val: bluetoothManager.cellMin, cmd: "22 DD 86", btn: "Live", bm: bluetoothManager)
@@ -55,7 +56,16 @@ struct OBD2DashboardView: View {
                         MetricRow(title: "Cell Mean", color: .teal, val: bluetoothManager.cellMean, cmd: "22 DD 88", btn: "Live", bm: bluetoothManager)
                         MetricRow(title: "Cell Std Dev", color: .red, val: bluetoothManager.cellStdDev, cmd: "22 DD 89", btn: "Live", bm: bluetoothManager)
                     }
-                    
+
+                    // Cutoff Thresholds and Energy Parameters
+                    Group {
+                        MetricRow(title: "MCU High Voltage Cutoff", color: .mint, val: String(format: "%.2f V", bluetoothManager.rawMcuHighVoltageCutoff), cmd: "22 DD 8A", btn: "Query", bm: bluetoothManager)
+                        MetricRow(title: "MCU Low Voltage Cutoff", color: .brown, val: String(format: "%.2f V", bluetoothManager.rawMcuLowVoltageCutoff), cmd: "22 DD 8B", btn: "Query", bm: bluetoothManager)
+                        MetricRow(title: "MCU Temp (Hi / Lo)", color: .yellow, val: String(format: "%.0f° / %.0f° C", bluetoothManager.rawMcuHighTemp, bluetoothManager.rawMcuLowTemp), cmd: "22 DD 8C", btn: "Live", bm: bluetoothManager)
+                        MetricRow(title: "Pack Max Capacity", color: .purple, val: String(format: "%.1f kWh", bluetoothManager.rawPackCapacityKwh), cmd: "22 DD 8D", btn: "Query", bm: bluetoothManager)
+                        MetricRow(title: "Pack Current Energy", color: .teal, val: String(format: "%.1f kWh", bluetoothManager.rawCurrentKwh), cmd: "22 DD 8E", btn: "Live", bm: bluetoothManager)
+                    }
+
                     // Burst Performance Test Toggle Card
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -68,9 +78,9 @@ struct OBD2DashboardView: View {
                         Spacer()
                         Button("Start Test") { bluetoothManager.startBurstTest() }
                             .font(.caption2).fontWeight(.bold).padding(8)
-                            .background(bluetoothManager.isBurstTesting || bluetoothManager.connectionStatus != "Connected" ? Color.secondary.opacity(0.3) : Color.orange)
+                            .background(bluetoothManager.isBurstTesting || !bluetoothManager.isConnected ? Color.secondary.opacity(0.3) : Color.orange)
                             .foregroundColor(.white).cornerRadius(6)
-                            .disabled(bluetoothManager.connectionStatus != "Connected" || bluetoothManager.isBurstTesting)
+                            .disabled(!bluetoothManager.isConnected || bluetoothManager.isBurstTesting)
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
 
@@ -97,7 +107,7 @@ struct OBD2DashboardView: View {
             .background(Color(.systemGroupedBackground)).navigationTitle("MCU Monitor")
         }
     }
-    
+
     private var statusColor: Color {
         switch bluetoothManager.connectionStatus {
         case "Connected": return .green
@@ -133,5 +143,3 @@ struct AlertLamp: View {
 }
 
 #Preview { ContentView() }
-
-

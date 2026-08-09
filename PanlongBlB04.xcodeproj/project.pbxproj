@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		CBB241493029338B002F25A7 /* OBD2Kit in Frameworks */ = {isa = PBXBuildFile; productRef = CBB241483029338B002F25A7 /* OBD2Kit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		CB34AC0B2FFD899B001E51CE /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -65,6 +69,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CBB241493029338B002F25A7 /* OBD2Kit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -125,6 +130,7 @@
 			);
 			name = PanlongBlB04;
 			packageProductDependencies = (
+				CBB241483029338B002F25A7 /* OBD2Kit */,
 			);
 			productName = PanlongBlB04;
 			productReference = CB34ABFD2FFD8999001E51CE /* PanlongBlB04.app */;
@@ -208,6 +214,9 @@
 			);
 			mainGroup = CB34ABF42FFD8999001E51CE;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				CBB241473029338B002F25A7 /* XCLocalSwiftPackageReference "../../EvDisplay/OBD2Kit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = CB34ABFE2FFD8999001E51CE /* Products */;
 			projectDirPath = "";
@@ -595,6 +604,20 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		CBB241473029338B002F25A7 /* XCLocalSwiftPackageReference "../../EvDisplay/OBD2Kit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../../EvDisplay/OBD2Kit;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		CBB241483029338B002F25A7 /* OBD2Kit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = OBD2Kit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CB34ABF52FFD8999001E51CE /* Project object */;
 }
