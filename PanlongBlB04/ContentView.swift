@@ -84,6 +84,27 @@ struct OBD2DashboardView: View {
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
 
+                    // Polling Cadence Metrics Test Card
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Polling Cadence Test (30 s)").font(.caption).foregroundColor(.teal).fontWeight(.bold)
+                            if bluetoothManager.isPollingMetricsRunning {
+                                Text("Cur: \(bluetoothManager.pollingMetricsCurrentCount)  Volt: \(bluetoothManager.pollingMetricsVoltageCount)  Slow: \(bluetoothManager.pollingMetricsSlowCount)  Total: \(bluetoothManager.pollingMetricsTotalCount)")
+                                    .font(.system(.caption2, design: .monospaced)).foregroundColor(.teal)
+                            }
+                        }
+                        Spacer()
+                        Button(bluetoothManager.isPollingMetricsRunning ? "Stop" : "Start Test") {
+                            if bluetoothManager.isPollingMetricsRunning { bluetoothManager.stopPollingMetricsTest() }
+                            else { bluetoothManager.startPollingMetricsTest() }
+                        }
+                        .font(.caption2).fontWeight(.bold).padding(8)
+                        .background(!bluetoothManager.isConnected || bluetoothManager.isBurstTesting ? Color.secondary.opacity(0.3) : Color.teal)
+                        .foregroundColor(.white).cornerRadius(6)
+                        .disabled(!bluetoothManager.isConnected || bluetoothManager.isBurstTesting)
+                    }
+                    .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
+
                     // Active Console Line Trace Output Window Terminal
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Bus Active Line Traces").font(.caption2).foregroundColor(.secondary)
