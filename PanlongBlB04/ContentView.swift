@@ -11,17 +11,29 @@ struct ContentView: View {
 }
 
 struct OBD2DashboardView: View {
-    @State private var bluetoothManager = OBD2ConnectionManager()
+    @State private var bluetoothManager = OBD2ConnectionManager(autoConnect: false)
 
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 12) {
                     // Status Header Connection Display Card
-                    VStack(spacing: 4) {
-                        Text("Hardware Node Connection").font(.caption).foregroundColor(.secondary)
-                        Text(bluetoothManager.connectionStatus) // Renders Scanning..., Connecting..., Connected
-                            .font(.body).fontWeight(.bold).foregroundColor(statusColor)
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Hardware Node Connection").font(.caption).foregroundColor(.secondary)
+                            Text(bluetoothManager.connectionStatus)
+                                .font(.body).fontWeight(.bold).foregroundColor(statusColor)
+                        }
+                        Spacer()
+                        Button(bluetoothManager.isConnected ? "Disconnect" : "Connect") {
+                            if bluetoothManager.isConnected { bluetoothManager.disconnect() }
+                            else { bluetoothManager.connect() }
+                        }
+                        .font(.caption2).fontWeight(.bold).padding(8)
+                        .background(bluetoothManager.isScanning ? Color.secondary.opacity(0.3)
+                                    : bluetoothManager.isConnected ? Color.red : Color.blue)
+                        .foregroundColor(.white).cornerRadius(6)
+                        .disabled(bluetoothManager.isScanning)
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10).shadow(radius: 1)
 
@@ -105,6 +117,24 @@ struct OBD2DashboardView: View {
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
 
+                    // CAN Bus Monitor Mode Card
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("CAN Bus Monitor Mode (AT MA)").font(.caption).foregroundColor(.purple).fontWeight(.bold)
+                            Text(bluetoothManager.isMonitorModeActive
+                                 ? (bluetoothManager.isConnected ? "Active — all CAN frames printing to console" : "Enabled — will activate on next connect")
+                                 : "Disabled — normal polling on connect")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundColor(bluetoothManager.isMonitorModeActive ? .purple : .secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $bluetoothManager.isMonitorModeActive)
+                            .labelsHidden()
+                            .tint(.purple)
+                            .disabled(bluetoothManager.isConnected)
+                    }
+                    .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
+
                     // Active Console Line Trace Output Window Terminal
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Bus Active Line Traces").font(.caption2).foregroundColor(.secondary)
@@ -132,8 +162,8 @@ struct OBD2DashboardView: View {
     private var statusColor: Color {
         switch bluetoothManager.connectionStatus {
         case "Connected": return .green
-        case "Scanning...", "Connecting...": return .orange
-        case "Ready to Scan": return .blue
+        case "Scanning...", "Connecting...", "Initializing...": return .orange
+        case "Ready to Connect", "Ready to Scan": return .blue
         default: return .red
         }
     }
