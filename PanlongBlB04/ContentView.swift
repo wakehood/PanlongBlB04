@@ -25,6 +25,13 @@ struct OBD2DashboardView: View {
                                 .font(.body).fontWeight(.bold).foregroundColor(statusColor)
                         }
                         Spacer()
+                        Button("Forget") {
+                            bluetoothManager.forgetPreferredPeripheral()
+                        }
+                        .font(.caption2).fontWeight(.bold).padding(8)
+                        .background(bluetoothManager.isConnected ? Color.secondary.opacity(0.3) : Color.orange)
+                        .foregroundColor(.white).cornerRadius(6)
+                        .disabled(bluetoothManager.isConnected)
                         Button(bluetoothManager.isConnected ? "Disconnect" : "Connect") {
                             if bluetoothManager.isConnected { bluetoothManager.disconnect() }
                             else { bluetoothManager.connect() }
