@@ -5,6 +5,7 @@
 //  Created by Sylvia Wake-Hood on 7/7/26.
 import SwiftUI
 import OBD2Kit
+import CoreBluetooth
 
 struct ContentView: View {
     var body: some View { OBD2DashboardView() }
@@ -142,6 +143,9 @@ struct OBD2DashboardView: View {
                     }
                     .frame(maxWidth: .infinity).padding(10).background(Color(.systemBackground)).cornerRadius(10)
 
+                    // BLE Peripheral Scanner — scan all BLE devices to diagnose adapter service UUIDs
+                    BLEScanCard()
+
                     // Active Console Line Trace Output Window Terminal
                     VStack(alignment: .leading, spacing: 4) {
                         Text("Bus Active Line Traces").font(.caption2).foregroundColor(.secondary)
@@ -197,6 +201,122 @@ struct AlertLamp: View {
             Circle().fill(state == 1 ? Color.red : Color.green).frame(width: 14, height: 14).shadow(color: state == 1 ? Color.red : Color.clear, radius: 4)
             Text(name).font(.system(size: 8, weight: .medium, design: .monospaced)).foregroundColor(.secondary).lineLimit(1)
         }.frame(maxWidth: .infinity).padding(.vertical, 6).background(Color(.systemGroupedBackground).opacity(0.5)).cornerRadius(6)
+    }
+}
+
+// MARK: - BLE Peripheral Scanner
+
+@Observable
+class BLEPeripheralScanner: NSObject, CBCentralManagerDelegate {
+    struct Entry: Identifiable {
+        let id: UUID
+        let name: String
+        var rssi: Int
+        var serviceUUIDs: [String]
+    }
+
+    var isScanning = false
+    var discovered: [Entry] = []
+    private var central: CBCentralManager?
+
+    func startScan() {
+        discovered = []
+        if central == nil {
+            central = CBCentralManager(delegate: self, queue: nil)
+        } else if central?.state == .poweredOn {
+            beginScan()
+        }
+    }
+
+    func stopScan() {
+        central?.stopScan()
+        isScanning = false
+    }
+
+    private func beginScan() {
+        isScanning = true
+        central?.scanForPeripherals(withServices: nil,
+                                    options: [CBCentralManagerScanOptionAllowDuplicatesKey: false])
+    }
+
+    func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        if central.state == .poweredOn { beginScan() }
+    }
+
+    func centralManager(_ central: CBCentralManager, didDiscover peripheral: CBPeripheral,
+                        advertisementData: [String: Any], rssi RSSI: NSNumber) {
+        let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID])?
+            .map { $0.uuidString.uppercased() } ?? []
+        let entry = Entry(id: peripheral.identifier,
+                          name: peripheral.name ?? "(unnamed)",
+                          rssi: RSSI.intValue,
+                          serviceUUIDs: services)
+        if let idx = discovered.firstIndex(where: { $0.id == peripheral.identifier }) {
+            discovered[idx] = entry
+        } else {
+            discovered.append(entry)
+        }
+    }
+}
+
+struct BLEScanCard: View {
+    @State private var scanner = BLEPeripheralScanner()
+
+    var sorted: [BLEPeripheralScanner.Entry] {
+        scanner.discovered.sorted { $0.rssi > $1.rssi }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("BLE Peripheral Scanner").font(.caption).foregroundColor(.indigo).fontWeight(.bold)
+                    Text(scanner.isScanning ? "Scanning all BLE devices…" : "Tap Start to discover all nearby BLE devices")
+                        .font(.system(.caption2, design: .monospaced)).foregroundColor(.secondary)
+                }
+                Spacer()
+                Button(scanner.isScanning ? "Stop" : "Start") {
+                    scanner.isScanning ? scanner.stopScan() : scanner.startScan()
+                }
+                .font(.caption2).fontWeight(.bold).padding(8)
+                .background(scanner.isScanning ? Color.red : Color.indigo)
+                .foregroundColor(.white).cornerRadius(6)
+            }
+
+            if !scanner.discovered.isEmpty {
+                Text("\(sorted.count) device(s) found — sorted by signal strength")
+                    .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+
+                ForEach(sorted) { entry in
+                    let isFFF0 = entry.serviceUUIDs.contains(where: { $0.contains("FFF0") })
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle()
+                            .fill(isFFF0 ? Color.green : Color.secondary.opacity(0.4))
+                            .frame(width: 8, height: 8)
+                            .padding(.top, 3)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.name)
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                                .foregroundColor(isFFF0 ? .green : .primary)
+                            Text("RSSI: \(entry.rssi) dBm  |  UUID: \(entry.id.uuidString)")
+                                .font(.system(size: 9, design: .monospaced)).foregroundColor(.secondary)
+                            if entry.serviceUUIDs.isEmpty {
+                                Text("Services: (none advertised)")
+                                    .font(.system(size: 9, design: .monospaced)).foregroundColor(.orange)
+                            } else {
+                                Text("Services: \(entry.serviceUUIDs.joined(separator: ", "))")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(isFFF0 ? .green : .orange)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 3)
+                    Divider()
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10).background(Color(.systemBackground)).cornerRadius(10)
     }
 }
 
